@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#e0603a" />
+<title>控糖有数 · 预包装食品隐形糖解读（手机版）</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="stage">
+  <aside class="stage-side">
+    <div class="side-brand"><span class="dot"></span>控糖有数 SugarLens-H5</div>
+    <p class="side-desc">本科毕业设计演示系统 · 预包装食品营养标签解读、隐形糖识别与每日添加糖自测</p>
+    <nav class="side-links">
+      <a href="https://github.com/mtjvmysnk9-tech/hidden-sugar-h5">源码仓库</a>
+      <a href="tools/selfcheck.html">系统自检页</a>
+    </nav>
+    <div class="side-accounts">
+      <b>怎么用</b>
+      <div>不用注册，打开即用，记录只存本机</div>
+      <div>「解读」页填营养标签 → 出糖克数与方糖块数</div>
+      <div>粘配料表 → 识别隐形糖与营销话术</div>
+      <div>「数据集」页录入实测标签，可导出 CSV/JSON</div>
+    </div>
+    <div class="side-note">提示：阈值取自 GB 28050-2025（2027-03-16 实施）与《中国居民膳食指南（2022）》；本系统不做医疗建议。</div>
+  </aside>
+
+  <div class="phone">
+    <div class="statusbar">
+      <span id="sb-time">9:41</span>
+      <span class="sb-right"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span>
+    </div>
+
+    <header class="navbar" id="navbar">
+      <button class="nav-back" id="nav-back" hidden>&lt;</button>
+      <h1 id="nav-title">控糖有数</h1>
+      <span class="capsule"><i class="cap-dot"></i><i class="cap-line"></i><i class="cap-sep"></i><i class="cap-circle"></i></span>
+    </header>
+
+    <main class="viewport" id="page"></main>
+    <nav class="tabbar" id="tabbar" hidden></nav>
+
+    <div class="layer" id="modal" hidden></div>
+    <div class="sheet" id="sheet" hidden></div>
+    <div class="toast" id="toast" hidden></div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
