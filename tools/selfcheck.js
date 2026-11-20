@@ -149,6 +149,52 @@
   C.Daily.remove(rec.id);
   eq('删除后今日为空', C.Daily.summary(C.today()).count, 0);
 
+  /* ------------------------------------------------ 餐次分栏（薄荷式记录） */
+  eq('餐次 4 档', D.MEALS.length, 4);
+  ok('每档都有键名/名称/时段', D.MEALS.every(function (m) { return m.k && m.t && m.range; }));
+  ok('餐次键含 breakfast/lunch/dinner/snack', ['breakfast', 'lunch', 'dinner', 'snack'].every(function (k) {
+    return D.MEALS.some(function (m) { return m.k === k; });
+  }));
+  ok('类别快选 ≥ 8', D.CATS.length >= 8);
+  ok('OCR 停用词 ≥ 10 且都是短词', D.OCR_STOPS.length >= 10 && D.OCR_STOPS.every(function (w) { return w.length >= 2; }));
+  var mrec = [
+    C.Daily.add({ name: '早餐牛奶', sugar: 5, meal: 'breakfast' }),
+    C.Daily.add({ name: '午餐米饭', sugar: 2, meal: 'lunch' }),
+    C.Daily.add({ name: '没填餐次', sugar: 3 }),
+    C.Daily.add({ name: '乱填餐次', sugar: 1, meal: 'midnight' })
+  ];
+  var ms = C.Daily.summary(C.today()).meals;
+  eq('早餐归栏 5g', ms.breakfast.sugar, 5);
+  eq('午餐归栏 2g', ms.lunch.sugar, 2);
+  eq('缺餐次的落进加餐', ms.snack.sugar, 4);
+  eq('没记录的餐次是 0 而不是空', ms.dinner.sugar, 0);
+  eq('四档之和等于全天合计', ms.breakfast.sugar + ms.lunch.sugar + ms.dinner.sugar + ms.snack.sugar, C.Daily.summary(C.today()).sugar);
+  var dlines = C.Export.dailyCsv().split('\r\n');
+  eq('记录 CSV 第二列是餐次', dlines[0].split(',')[1], '餐次');
+  ok('导出写中文餐次名', dlines.some(function (l) { return l.indexOf(',早餐,早餐牛奶,5,') >= 0; }));
+  ok('不认识的餐次导出成加餐', dlines.some(function (l) { return l.indexOf(',加餐,乱填餐次,') >= 0; }));
+  mrec.forEach(function (r) { C.Daily.remove(r.id); });
+
+  /* ------------------------------------------------ 采集编号 + OCR 文本抽取 */
+  eq('起始编号跟着已有最大编号走', C.Catalog.nextCode(), 'S-0002');
+  var c1 = C.Catalog.save({ id: 'S-0007', name: '编号甲', photoFile: 'S-0007.jpg' });
+  var c2 = C.Catalog.save({ id: '', name: '编号乙', photoFile: 'S-0102.png' });
+  eq('按已有最大编号递增', C.Catalog.nextCode(), 'S-0103');
+  C.Catalog.remove(c1.id); C.Catalog.remove(c2.id);
+  eq('抽掉新增后编号回退', C.Catalog.nextCode(), 'S-0002');
+  eq('抹掉汉字之间的空格', C.Parser.denoise('白 砂 糖'), '白砂糖');
+  eq('顿号两侧空格清掉', C.Parser.denoise('水 、 白砂糖'), '水、白砂糖');
+  eq('正常文本不被误伤', C.Parser.denoise('配料：水、白砂糖'), '配料：水、白砂糖');
+  var ocrRaw = '配料 表 : 水 、 白 砂糖 、 果 葡 糖浆 、\n柠檬 汁 、 食 用 盐 、 二 氧化 碳\n产品 标准 号 GB/T 10792 保质 期 12 个 月\n';
+  var ex = C.Parser.extractIngredients(ocrRaw);
+  ok('配料段跨行接回来了', ex.indexOf('白砂糖') >= 0 && ex.indexOf('二氧化碳') >= 0);
+  ok('撞到栏目词就截断', ex.indexOf('产品标准号') < 0 && ex.indexOf('保质期') < 0);
+  ok('抽出来的段落可直接解析', C.Parser.parseIngredients(ex).level === '高');
+  eq('没有"配料"二字返回空串', C.Parser.extractIngredients('营养成分表 能量 180kJ'), '');
+  eq('空文本返回空串', C.Parser.extractIngredients(''), '');
+  var ex2 = C.Parser.extractIngredients('单行配料：水、白砂糖、食用盐 产品标准号 GB/T 10792');
+  ok('单行也能截到栏目词前', ex2.indexOf('食用盐') >= 0 && ex2.indexOf('GB/T') < 0);
+
   /* ------------------------------------------------ 测评 */
   var set = C.Quiz.build(8);
   eq('抽 8 题', set.length, 8);

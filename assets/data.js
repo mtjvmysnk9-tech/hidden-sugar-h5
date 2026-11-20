@@ -165,6 +165,34 @@
       why: '理想上限 25 g/天，53 ÷ 25 ≈ 212%——一瓶就把两天的额度用完了。', std: '膳食指南 2022' }
   ];
 
+  /* 每日记录的餐次分栏（参照薄荷健康的记录结构） */
+  var MEALS = [
+    { k: 'breakfast', t: '早餐', range: '05:00–10:00' },
+    { k: 'lunch', t: '午餐', range: '10:00–14:00' },
+    { k: 'dinner', t: '晚餐', range: '14:00–21:00' },
+    { k: 'snack', t: '加餐', range: '其余时段 / 未分类' }
+  ];
+
+  /* 数据集录入的类别快选 */
+  var CATS = ['饮料', '乳与乳制品', '焙烤食品', '膨化与零食', '调味品', '冲调谷物', '糖果巧克力', '冷冻饮品', '方便食品', '罐头与果酱'];
+
+  /* 拍照识别：模型走 CDN，首次点击才下载（约 1.7 MB）
+     实测：干净的印刷体中文置信度约 84，仍有 5–8% 单字错，包装实拍更差——
+     所以只作为草稿，必须人工核对后才写入数据。 */
+  var OCR = {
+    libs: ['https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+           'https://unpkg.com/tesseract.js@5/dist/tesseract.min.js'],
+    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+    corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5',
+    langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/chi_sim/4.0.0_best_int',
+    lang: 'chi_sim',
+    tip: '识别只出草稿：中文单字仍有 5–8% 错、数字与小数点实测可靠。请在上面文本框里核对、改对再点识别，否则数据不可信。'
+  };
+
+  /* 从 OCR 杂文里定位配料表时，遇到这些栏目词就截断 */
+  var OCR_STOPS = ['产品标准号', '标准号', '执行标准', '生产许可证', 'SC1', '食品生产许可证', '保质期', '贮存', '储存',
+    '生产商', '制造商', '委托方', '经销商', '厂名', '厂址', '地址', '电话', '产地', '净含量', '生产日期', '营养成分', '能量', '条形码', '追溯码'];
+
   /* 首页/关于页的口径说明 */
   var NOTES = [
     '本系统只做标签解读与自我记录，不构成医疗或营养诊断建议。',
@@ -174,6 +202,6 @@
 
   return {
     version: STANDARDS.version, STANDARDS: STANDARDS, TERMS: TERMS, MASKS: MASKS,
-    SEEDS: SEEDS, QUIZ: QUIZ, NOTES: NOTES
+    SEEDS: SEEDS, QUIZ: QUIZ, NOTES: NOTES, MEALS: MEALS, CATS: CATS, OCR: OCR, OCR_STOPS: OCR_STOPS
   };
 }));
