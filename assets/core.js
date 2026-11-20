@@ -130,8 +130,41 @@
       }
       return best;
     },
+    /** OCR 会在汉字之间塞空格（"白 砂 糖"）、在顿号两边塞空格，先抹掉再切词；正常文本无副作用 */
+    denoise: function (text) {
+      return String(text || '')
+        .replace(/([一-鿿])[ \t]+(?=[一-鿿])/g, '$1')
+        .replace(/([一-鿿])[ \t]+(?=[一-鿿])/g, '$1')
+        .replace(/[ \t]*([、，；：:;])[ \t]*/g, '$1');
+    },
+    /** OCR 出来的是整张标签的杂文。配料表在实物上会折行，所以按行往下接，
+        碰到栏目词（产品标准号 / 保质期 / 地址…）或没有分隔符的行就停；定位不到返回空串 */
+    extractIngredients: function (text) {
+      var s = Parser.denoise(String(text || '')).replace(/\r/g, '');
+      if (s.indexOf('配料') < 0) return '';
+      var cut = function (line, from) {
+        var pos = line.length;
+        D.OCR_STOPS.forEach(function (w) {
+          var k = line.indexOf(w, from);
+          if (k >= 0 && k < pos) pos = k;
+        });
+        return line.slice(from, pos);
+      };
+      var lines = s.split('\n'), start = -1;
+      for (var i = 0; i < lines.length; i++) { if (lines[i].indexOf('配料') >= 0) { start = i; break; } }
+      if (start < 0) return '';
+      var head = lines[start];
+      var out = cut(head, head.indexOf('配料'));
+      for (var j = start + 1; j <= Math.min(start + 4, lines.length - 1); j++) {
+        var ln = lines[j].trim();
+        if (!ln || D.OCR_STOPS.some(function (w) { return ln.indexOf(w) >= 0; }) || !/[一-鿿]/.test(ln)) break;
+        out += /[、，,；;]$/.test(out) ? ln : '、' + ln;
+        if (!/[、，,；;]/.test(ln)) break;
+      }
+      return out.replace(/[:：、，,；;\s]+$/, '').replace(/\s+/g, '').trim();
+    },
     split: function (text) {
-      return String(text || '').replace(/^.{0,8}配料(表)?\s*[:：]/i, '')
+      return Parser.denoise(text).replace(/^.{0,8}配料(表)?\s*[:：]/i, '')
         .split(/[、,，;；\/\|\s]+/).map(function (s) { return s.replace(/[（(].*?[)）]/g, '').trim(); })
         .filter(function (s) { return s.length > 0 && s !== '及' && s !== '等'; });
     },
@@ -203,6 +236,16 @@
       return all.filter(function (f) {
         return (f.name + ' ' + (f.brand || '') + ' ' + (f.cat || '')).toLowerCase().indexOf(k) >= 0;
       });
+    },
+    /** 下一个采集编号：S-0001 递增，和照片文件名对齐 */
+    nextCode: function () {
+      var max = 0;
+      Catalog.all().forEach(function (f) {
+        var m = /^S-(\d{3,})$/.exec(String(f.photoFile || '').replace(/\.(jpe?g|png)$/i, '')) ||
+                /^S-(\d{3,})$/.exec(String(f.id || ''));
+        if (m) max = Math.max(max, +m[1]);
+      });
+      return 'S-' + String(max + 1).padStart(4, '0');
     }
   };
 
@@ -221,11 +264,15 @@
     remove: function (id) { Store.set(K_DAILY, Daily.list().filter(function (r) { return r.id !== id; })); },
     ofDate: function (date) { return Daily.list().filter(function (r) { return r.date === date; }); },
     summary: function (date) {
-      var sum = { sugar: 0, kcal: 0, count: 0 };
+      var sum = { sugar: 0, kcal: 0, count: 0, meals: {} };
+      D.MEALS.forEach(function (m) { sum.meals[m.k] = { sugar: 0, kcal: 0, count: 0 }; });
       Daily.ofDate(date).forEach(function (r) {
         sum.sugar += (+r.sugar || 0); sum.kcal += (+r.kcal || 0); sum.count++;
+        var mk = r.meal && sum.meals[r.meal] ? r.meal : 'snack';
+        sum.meals[mk].sugar += (+r.sugar || 0); sum.meals[mk].kcal += (+r.kcal || 0); sum.meals[mk].count++;
       });
       sum.sugar = round(sum.sugar, 1);
+      Object.keys(sum.meals).forEach(function (k) { sum.meals[k].sugar = round(sum.meals[k].sugar, 1); });
       return sum;
     },
     trend: function (days) {
@@ -242,6 +289,39 @@
       }
       return n;
     }
+  };
+
+  /* ------------------------------------------------------- 照片档案（IndexedDB，本机）
+     采集 300–500 张标签照片时，编号即照片文件名，两者必须一一对得上。 */
+  var Photos = {
+    _db: null,
+    open: function () {
+      return new Promise(function (res, rej) {
+        if (Photos._db) return res(Photos._db);
+        if (typeof indexedDB === 'undefined') return rej(new Error('本机浏览器不支持 IndexedDB'));
+        var rq = indexedDB.open('sugarlens', 1);
+        rq.onupgradeneeded = function () {
+          if (!rq.result.objectStoreNames.contains('photos')) rq.result.createObjectStore('photos');
+        };
+        rq.onsuccess = function () { Photos._db = rq.result; res(rq.result); };
+        rq.onerror = function () { rej(rq.error || new Error('打开照片库失败')); };
+      });
+    },
+    _tx: function (mode, fn) {
+      return Photos.open().then(function (db) {
+        return new Promise(function (res, rej) {
+          var t = db.transaction('photos', mode), s = t.objectStore('photos'), r = fn(s);
+          t.oncomplete = function () { res(r.result); };
+          t.onerror = function () { rej(t.error || new Error('照片读写失败')); };
+          t.onabort = function () { rej(t.error || new Error('照片读写被中断')); };
+        });
+      });
+    },
+    put: function (code, blob) { return Photos._tx('readwrite', function (s) { return s.put(blob, code); }); },
+    get: function (code) { return Photos._tx('readonly', function (s) { return s.get(code); }); },
+    remove: function (code) { return Photos._tx('readwrite', function (s) { return s.delete(code); }); },
+    codes: function () { return Photos._tx('readonly', function (s) { return s.getAllKeys(); }); },
+    count: function () { return Photos.codes().then(function (k) { return k.length; }, function () { return 0; }); }
   };
 
   /* ------------------------------------------------------- 测评 */
@@ -286,11 +366,13 @@
       return Export.toCsv([Export.CSV_HEADER].concat(rows));
     },
     dailyCsv: function () {
+      var mealName = {};
+      D.MEALS.forEach(function (m) { mealName[m.k] = m.t; });
       var rows = Daily.list().map(function (r) {
-        return [r.date, r.name, r.sugar == null ? '' : r.sugar, r.kcal == null ? '' : r.kcal,
+        return [r.date, mealName[r.meal] || '加餐', r.name, r.sugar == null ? '' : r.sugar, r.kcal == null ? '' : r.kcal,
           r.portion || '', r.source || '', r.note || '', new Date(r.createdAt).toLocaleString('zh-CN')];
       });
-      return Export.toCsv([['日期', '记录对象', '添加糖g', '能量kcal', '份量', '来源', '备注', '时间']].concat(rows));
+      return Export.toCsv([['日期', '餐次', '记录对象', '添加糖g', '能量kcal', '份量', '来源', '备注', '时间']].concat(rows));
     },
     json: function () {
       return JSON.stringify({ exportedAt: new Date().toISOString(), standard: D.STANDARDS,
@@ -330,6 +412,6 @@
   };
 
   return { D: D, Store: Store, Prefs: Prefs, Calc: Calc, Parser: Parser, Catalog: Catalog,
-    Daily: Daily, Quiz: Quiz, Export: Export, Admin: Admin, today: today, round: round, hash: hash,
-    SEED_VER: SEED_VER };
+    Daily: Daily, Quiz: Quiz, Export: Export, Admin: Admin, Photos: Photos,
+    today: today, round: round, hash: hash, SEED_VER: SEED_VER };
 }));
